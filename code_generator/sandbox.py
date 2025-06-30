@@ -4,20 +4,19 @@ import tempfile
 import shutil
 import textwrap
 import logging
+from dataclasses import dataclass
 from typing import Optional, List
 from pathlib import Path
-from dataclasses import dataclass
+
+# Import the CodeFile class from the llm_interface module
+from .llm_interface import CodeFile
+
 
 # --- Data Structures ---
 @dataclass
-class CodeFile:
-    """Represents a single file to be written to the workspace."""
-    relative_path: Path
-    content: str
-
-@dataclass
 class ExecutionResult:
     """Represents the outcome of a command executed in Docker."""
+
     exit_code: int
     stdout: str
     stderr: str
@@ -27,6 +26,7 @@ class ExecutionResult:
     def was_successful(self) -> bool:
         """Returns True if the command executed successfully."""
         return self.exit_code == 0
+
 
 # --- Docker Sandbox Class ---
 class DockerSandbox:
@@ -48,9 +48,7 @@ class DockerSandbox:
 
     def __enter__(self) -> "DockerSandbox":
         """Sets up the workspace when entering the 'with' context."""
-        self.workspace_path = Path(
-            tempfile.mkdtemp(prefix=self.WORKSPACE_HOST_PREFIX)
-        )
+        self.workspace_path = Path(tempfile.mkdtemp(prefix=self.WORKSPACE_HOST_PREFIX))
         logging.info(f"Created temporary workspace: {self.workspace_path}")
 
         for code_file in self.files:
@@ -85,7 +83,12 @@ class DockerSandbox:
         host_path = str(self.workspace_path.resolve())
         container_path = "/app"
 
-        docker_command = ["docker", "run", "--rm", f"--volume={host_path}:{container_path}"]
+        docker_command = [
+            "docker",
+            "run",
+            "--rm",
+            f"--volume={host_path}:{container_path}",
+        ]
 
         if os.name == "posix":
             user_id = os.getuid()
@@ -111,7 +114,9 @@ class DockerSandbox:
             )
         except Exception as e:
             logging.error(f"--- DOCKER EXECUTION FAILED: UNEXPECTED ERROR --- \n{e}")
-            return ExecutionResult(exit_code=-1, stdout="", stderr=str(e), timed_out=False)
+            return ExecutionResult(
+                exit_code=-1, stdout="", stderr=str(e), timed_out=False
+            )
 
     @staticmethod
     def setup_image() -> None:
@@ -122,9 +127,13 @@ class DockerSandbox:
                 check=True,
                 capture_output=True,
             )
-            logging.info(f"Docker image '{DockerSandbox.DOCKER_IMAGE_NAME}' already exists.")
+            logging.info(
+                f"Docker image '{DockerSandbox.DOCKER_IMAGE_NAME}' already exists."
+            )
         except subprocess.CalledProcessError:
-            logging.warning(f"Docker image '{DockerSandbox.DOCKER_IMAGE_NAME}' not found.")
+            logging.warning(
+                f"Docker image '{DockerSandbox.DOCKER_IMAGE_NAME}' not found."
+            )
             DockerSandbox._create_dockerfile_if_not_exists()
             DockerSandbox._build_docker_image()
 
@@ -134,7 +143,8 @@ class DockerSandbox:
         dockerfile_path = Path("Dockerfile")
         if not dockerfile_path.exists():
             logging.info("Dockerfile not found. Creating one...")
-            dockerfile_path.write_text(textwrap.dedent("""
+            dockerfile_path.write_text(
+                textwrap.dedent("""
                 FROM ghcr.io/astral-sh/uv:latest as uv-installer
                 FROM python:3.12-slim
                 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
@@ -143,7 +153,8 @@ class DockerSandbox:
                 RUN python -V && uv --version
                 WORKDIR /app
                 CMD [ "bash" ]
-            """))
+            """)
+            )
 
     @staticmethod
     def _build_docker_image() -> None:
@@ -152,7 +163,9 @@ class DockerSandbox:
         try:
             subprocess.run(
                 ["docker", "build", "-t", DockerSandbox.DOCKER_IMAGE_NAME, "."],
-                check=True, capture_output=True, text=True
+                check=True,
+                capture_output=True,
+                text=True,
             )
             logging.info("Docker image built successfully.")
         except subprocess.CalledProcessError as e:

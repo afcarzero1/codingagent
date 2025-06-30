@@ -1,80 +1,133 @@
 import logging
-import textwrap
+from dotenv import load_dotenv
+from datetime import datetime
 from pathlib import Path
-from typing import List
 
-# Import the necessary classes from the sandbox module
-from code_generator.sandbox import DockerSandbox, CodeFile
+# Import the necessary classes from our local modules
+from code_generator.sandbox import DockerSandbox, ExecutionResult
+from code_generator.llm_interface import LLMInterface, TaskOutput, CodeFile
 
-# --- Placeholders for AI-Generated Inputs ---
-SRC_FILES: List[CodeFile] = [
-    CodeFile(relative_path=Path("src/__init__.py"), content=""),
-    CodeFile(
-        relative_path=Path("src/function_to_test.py"),
-        content=textwrap.dedent("""
-            def add(x: float, y: float) -> float:
-                return x + y
-            def subtract(x: float, y: float) -> float:
-                return x - y
-        """),
-    ),
-]
-TEST_FILES: List[CodeFile] = [
-    CodeFile(
-        relative_path=Path("tests/test_functions.py"),
-        content=textwrap.dedent("""
-            from src.function_to_test import add, subtract
-            import pytest
-            def test_add_positive_numbers() -> None:
-                assert add(2, 3) == 5
-            def test_subtract() -> None:
-                assert subtract(10, 5) == 5
-        """),
-    )
-]
-EXECUTION_COMMAND_PLACEHOLDER: str = (
+# --- Configuration ---
+MAX_ATTEMPTS = 3
+EXECUTION_COMMAND = (
     "python3 -m venv .venv && "
     ". .venv/bin/activate && "
     "uv pip install --no-cache -q pytest && "
     "pytest -p no:cacheprovider -v"
 )
+RUNS_DIR = Path("runs")
+
+
+def save_attempt_artifacts(
+    run_dir: Path,
+    attempt: int,
+    generated_code: TaskOutput,
+    execution_result: ExecutionResult,
+) -> None:
+    """Saves the generated code and execution results for a specific attempt.
+
+    Args:
+        run_dir: The main directory for the current execution run.
+        attempt: The current attempt number.
+        generated_code: The TaskOutput object from the LLM.
+        execution_result: The ExecutionResult from the sandbox.
+    """
+    attempt_dir = run_dir / f"attempt_{attempt}"
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the generated code files
+    for code_file in generated_code.files:
+        file_path = attempt_dir / code_file.relative_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(code_file.content)
+
+    # Save the execution report
+    report_content = f"""
+--- EXECUTION REPORT (Attempt {attempt}) ---
+Timed Out: {execution_result.timed_out}
+Exit Code: {execution_result.exit_code}
+--- STDOUT ---
+{execution_result.stdout if execution_result.stdout.strip() else "No standard output."}
+--- STDERR ---
+{execution_result.stderr if execution_result.stderr.strip() else "No standard error."}
+--- END REPORT ---
+    """
+    (attempt_dir / "execution_report.txt").write_text(report_content)
+    logging.info(f"Saved artifacts for attempt {attempt} to {attempt_dir}")
+
 
 def main() -> None:
-    """Main function to orchestrate the code testing process."""
+    """Main function to orchestrate the code generation and testing process."""
+    load_dotenv()
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 1. Ensure the Docker image is ready before creating any sandboxes.
-    DockerSandbox.setup_image()
+    # Create a directory for the current run, timestamped
+    run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    current_run_dir = RUNS_DIR / f"run_{run_timestamp}"
+    current_run_dir.mkdir(parents=True, exist_ok=True)
+    logging.info(f"Created run directory: {current_run_dir}")
 
-    # 2. Define the project state.
-    all_files = SRC_FILES + TEST_FILES
-    command = EXECUTION_COMMAND_PLACEHOLDER
+    try:
+        # 1. Instantiate the LLM interface.
+        llm = LLMInterface()
 
-    # 3. Use the sandbox as a context manager to handle setup and cleanup.
-    with DockerSandbox(files=all_files, command=command) as sandbox:
-        execution_result = sandbox.run()
+        # 2. Ensure the Docker image is ready.
+        DockerSandbox.setup_image()
 
-    # 4. Process and display the results.
-    logging.info("--- Execution Finished ---")
-    if execution_result.was_successful:
-        logging.info("✅ Run was successful! All tests passed.")
-    else:
-        logging.error(f"❌ Run failed with exit code {execution_result.exit_code}.")
+        # 3. Define the initial prompt for the AI.
+        prompt = "Create a python function that adds two numbers, and a test for it."
 
-    logging.info(f"""
-        --- EXECUTION REPORT ---
-        Timed Out: {execution_result.timed_out}
-        Exit Code: {execution_result.exit_code}
-        --- STDOUT ---
-        {execution_result.stdout if execution_result.stdout.strip() else "No standard output."}
-        --- STDERR ---
-        {execution_result.stderr if execution_result.stderr.strip() else "No standard error."}
-        --- END REPORT ---
-    """)
+        generated_code: TaskOutput = None
+        execution_result: ExecutionResult = None
+
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            logging.info(f"--- Attempt {attempt}/{MAX_ATTEMPTS} ---")
+
+            if attempt == 1:
+                # First attempt: generate from the initial prompt
+                generated_code = llm.generate_code(prompt, EXECUTION_COMMAND)
+            else:
+                # Subsequent attempts: provide feedback to refine the code
+                feedback = f"STDOUT:\n{execution_result.stdout}\n\nSTDERR:\n{execution_result.stderr}"
+                generated_code = llm.provide_feedback(
+                    prompt,
+                    EXECUTION_COMMAND,
+                    generated_code,  # previous version
+                    feedback,
+                )
+
+            # Use the sandbox to execute the generated code
+            with DockerSandbox(
+                files=generated_code.files, command=EXECUTION_COMMAND
+            ) as sandbox:
+                execution_result = sandbox.run()
+
+            # Save the artifacts for this attempt
+            save_attempt_artifacts(
+                current_run_dir, attempt, generated_code, execution_result
+            )
+
+            if execution_result.was_successful:
+                logging.info(f"✅ Run was successful on attempt {attempt}!")
+                break  # Exit the loop on success
+            else:
+                logging.error(
+                    f"❌ Attempt {attempt} failed with exit code {execution_result.exit_code}."
+                )
+
+        else:  # This runs if the for loop completes without a 'break'
+            logging.error(
+                f"❌ Failed to generate correct code after {MAX_ATTEMPTS} attempts."
+            )
+
+    except (ValueError, KeyError) as e:
+        logging.error(f"An error occurred: {e}")
+        raise
+
 
 if __name__ == "__main__":
     main()
