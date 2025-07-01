@@ -5,7 +5,12 @@ from pathlib import Path
 
 # Import the necessary classes from our local modules
 from code_generator.sandbox import DockerSandbox, ExecutionResult
-from code_generator.llm_interface import LLMInterface, TaskOutput, CodeFile
+from code_generator.llm_interface import LLMInterface
+from code_generator.agents.coding_agent import (
+    CodeAgent,
+    CodeAgentInput,
+    CodeAgentOutput,
+)
 
 # --- Configuration ---
 MAX_ATTEMPTS = 3
@@ -21,7 +26,7 @@ RUNS_DIR = Path("runs")
 def save_attempt_artifacts(
     run_dir: Path,
     attempt: int,
-    generated_code: TaskOutput,
+    generated_code: CodeAgentOutput,
     execution_result: ExecutionResult,
 ) -> None:
     """Saves the generated code and execution results for a specific attempt.
@@ -29,7 +34,7 @@ def save_attempt_artifacts(
     Args:
         run_dir: The main directory for the current execution run.
         attempt: The current attempt number.
-        generated_code: The TaskOutput object from the LLM.
+        generated_code: The CodeAgentOutput object from the agent.
         execution_result: The ExecutionResult from the sandbox.
     """
     attempt_dir = run_dir / f"attempt_{attempt}"
@@ -60,7 +65,7 @@ def main() -> None:
     """Main function to orchestrate the code generation and testing process."""
     load_dotenv()
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
@@ -72,8 +77,9 @@ def main() -> None:
     logging.info(f"Created run directory: {current_run_dir}")
 
     try:
-        # 1. Instantiate the LLM interface.
+        # 1. Instantiate the LLM interface and the agent.
         llm = LLMInterface()
+        agent = CodeAgent(llm_interface=llm)
 
         # 2. Ensure the Docker image is ready.
         DockerSandbox.setup_image()
@@ -81,24 +87,26 @@ def main() -> None:
         # 3. Define the initial prompt for the AI.
         prompt = "Create a python function that adds two numbers, and a test for it."
 
-        generated_code: TaskOutput = None
+        generated_code: CodeAgentOutput = None
         execution_result: ExecutionResult = None
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
             logging.info(f"--- Attempt {attempt}/{MAX_ATTEMPTS} ---")
 
-            if attempt == 1:
-                # First attempt: generate from the initial prompt
-                generated_code = llm.generate_code(prompt, EXECUTION_COMMAND)
-            else:
-                # Subsequent attempts: provide feedback to refine the code
+            # Prepare the input for the agent
+            feedback = None
+            if execution_result:
                 feedback = f"STDOUT:\n{execution_result.stdout}\n\nSTDERR:\n{execution_result.stderr}"
-                generated_code = llm.provide_feedback(
-                    prompt,
-                    EXECUTION_COMMAND,
-                    generated_code,  # previous version
-                    feedback,
-                )
+
+            agent_input = CodeAgentInput(
+                prompt=prompt,
+                command=EXECUTION_COMMAND,
+                previous_result=generated_code,
+                execution_feedback=feedback,
+            )
+
+            # Run the agent to get the generated code
+            generated_code = agent.run(agent_input)
 
             # Use the sandbox to execute the generated code
             with DockerSandbox(
@@ -113,7 +121,7 @@ def main() -> None:
 
             if execution_result.was_successful:
                 logging.info(f"✅ Run was successful on attempt {attempt}!")
-                break  # Exit the loop on success
+                break
             else:
                 logging.error(
                     f"❌ Attempt {attempt} failed with exit code {execution_result.exit_code}."

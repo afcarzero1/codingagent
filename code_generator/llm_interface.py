@@ -5,7 +5,7 @@ from google import genai
 from typing import TypeVar, Type
 from pydantic import BaseModel
 
-T = TypeVar(bound=BaseModel)
+T = TypeVar("T", bound=BaseModel)
 
 
 class LLMInterface:

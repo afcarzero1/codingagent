@@ -8,8 +8,17 @@ from dataclasses import dataclass
 from typing import Optional, List
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
+
 # Import the CodeFile class from the llm_interface module
-from .llm_interface import CodeFile
+class CodeFile(BaseModel):
+    relative_path: str = Field(
+        ..., description="The path of the file relative to the workspace root."
+    )
+    content: str = Field(
+        ..., description="The full source code or text content of the file."
+    )
 
 
 # --- Data Structures ---

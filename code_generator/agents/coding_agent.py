@@ -1,15 +1,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from code_generator.agents.agent import Agent
-
-
-class CodeFile(BaseModel):
-    relative_path: str = Field(
-        ..., description="The path of the file relative to the workspace root."
-    )
-    content: str = Field(
-        ..., description="The full source code or text content of the file."
-    )
+from ..sandbox import CodeFile
 
 
 class CodeAgentOutput(BaseModel):
