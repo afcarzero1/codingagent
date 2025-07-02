@@ -8,12 +8,15 @@ class CodeAgentOutput(BaseModel):
     files: List[CodeFile] = Field(
         ..., description="A list of all generated source files."
     )
+    reasoning: str = Field(
+        ..., description="A reasoning behind the changes that you implemented."
+    )
 
 
 class CodeAgentInput(BaseModel):
     prompt: str = Field(
         ...,
-        description="The primary user request describing the desired functionality.",
+        description="The instructions for the coding agent.",
     )
     command: str = Field(
         ..., description="The command that will be used to execute the generated code."
@@ -84,7 +87,6 @@ class CodeAgent(Agent[CodeAgentOutput]):
 
         final_prompt = self.get_prompt(is_refinement, **prompt_args)
 
-        # Use the LLM interface to get a structured response
         return self.llm_interface.generate_json(
             prompt=final_prompt, response_model=CodeAgentOutput
         )
