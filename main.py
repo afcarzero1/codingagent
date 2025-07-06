@@ -132,7 +132,7 @@ def main() -> None:
     """Main function to orchestrate the agentic workflow."""
     load_dotenv()
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
@@ -174,14 +174,14 @@ def main() -> None:
         The Streamlit dashboard must have a clear sidebar for user inputs, including:
         1.  **Buy Scenario:**
             -   Total Property Price (SEK)
-            -   Down Payment (Kontantinsats) (%)
-            -   Mortgage Interest Rate (Bolåneränta) (%)
-            -   Loan Term (Lånetid) (years)
-            -   Monthly Housing Association Fee (Månadsavgift till föreningen) (SEK)
+            -   Down Payment  (%)
+            -   Mortgage Interest Rate  (%)
+            -   Loan Term  (years)
+            -   Monthly Housing Association Fee  (SEK)
             -   Annual Property Maintenance Costs (% of property price)
             -   Expected Annual Property Value Appreciation (%)
         2.  **Rent Scenario:**
-            -   Monthly Rent (Månadshyra) (SEK)
+            -   Monthly Rent  (SEK)
             -   Expected Annual Rent Increase (%)
         3.  **General Assumptions:**
             -   Analysis Timeframe (years)

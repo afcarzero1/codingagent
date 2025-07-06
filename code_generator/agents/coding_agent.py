@@ -36,7 +36,12 @@ class CodeAgent(Agent[CodeAgentOutput]):
 
     INITIAL_PROMPT_TEMPLATE = """
     You are an expert Python developer. Your task is to generate a set of Python files based on the following prompt.
-    The aim of the program you are writing is: "{prompt}"
+    Prompt: "{prompt}"
+    
+    Make sure that all your code is properly tested, the functions must have type hints
+    and proper docstrings. You have to be mindful of having a well structured code (i.e.
+    no functions with excesive number of parameters, divide into classes, use OOP when needed,
+    have interfaces if needed, split into modules if needed etc)
 
     The code will be executed in a sandboxed environment, and the following command will be run from the root of the workspace to test your code:
     --- COMMAND ---
@@ -48,7 +53,11 @@ class CodeAgent(Agent[CodeAgentOutput]):
     You are an expert Python developer. Your previous attempt to write code had issues.
     Your original aim was: "{prompt}"
     The command used for execution was: "{command}"
-
+    
+    Make sure that all your code is properly tested, the functions must have type hints
+    and proper docstrings. You have to be mindful of having a well structured code (i.e.
+    no functions with excesive number of parameters, divide into classes, use OOP when needed,
+    have interfaces if needed, split into modules if needed etc)
     You previously generated the following files:
     --- PREVIOUS FILES ---
     {previous_files_json}

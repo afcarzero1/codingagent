@@ -9,6 +9,8 @@ from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
 
+logger = logging.getLogger(__name__)
+
 
 class LLMInterface:
     """Handles all communication with the Gemini API."""
@@ -19,12 +21,12 @@ class LLMInterface:
             api_key = os.environ["GEMINI_API_KEY"]
             self.client = genai.Client(api_key=api_key)
         except KeyError:
-            logging.error("GEMINI_API_KEY environment variable not set.")
+            logger.error("GEMINI_API_KEY environment variable not set.")
             raise
 
         self.model = model
         self.last_request_time = 0  # Add timestamp for rate limiting
-        logging.info("LLMInterface initialized successfully.")
+        logger.info("LLMInterface initialized successfully.")
 
     def generate_json(self, prompt: str, response_model: Type[T]) -> T:
         """
@@ -43,7 +45,7 @@ class LLMInterface:
             time_since_last_request = current_time - self.last_request_time
             if time_since_last_request < 10:
                 sleep_duration = 10 - time_since_last_request
-                logging.info(f"Rate limiting. Waiting for {sleep_duration:.2f} seconds.")
+                logger.info(f"Rate limiting. Waiting for {sleep_duration:.2f} seconds.")
                 time.sleep(sleep_duration)
 
         # Update the last request time before making the new request
@@ -52,8 +54,8 @@ class LLMInterface:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                logging.info(f"Sending prompt (attempt {attempt + 1}/{max_retries}).")
-                logging.debug(f"Prompt: '{prompt}'")
+                logger.info(f"Sending prompt (attempt {attempt + 1}/{max_retries}).")
+                logger.debug(f"Prompt: '{prompt}'")
 
                 response = self.client.models.generate_content(
                     model=self.model,
@@ -64,26 +66,26 @@ class LLMInterface:
                     },
                 )
 
-                logging.debug(f"Received raw response: {response.text}")
-                logging.info("Received response from LLM.")
+                logger.debug(f"Received raw response: {response.text}")
+                logger.info("Received response from LLM.")
 
                 try:
                     output_dict = json.loads(response.text)
-                    logging.info("Successfully parsed LLM response.")
+                    logger.info("Successfully parsed LLM response.")
                     return response_model(**output_dict)
                 except (json.JSONDecodeError, TypeError) as e:
-                    logging.error(f"Failed to parse LLM response as JSON: {e}")
-                    logging.error(f"Raw LLM response: {response.text}")
+                    logger.error(f"Failed to parse LLM response as JSON: {e}")
+                    logger.error(f"Raw LLM response: {response.text}")
                     # This is not a server error, so we don't retry.
                     raise ValueError("LLM did not return a valid JSON object.") from e
 
             except genai_errors.ServerError as e:
-                logging.warning(f"Server error on attempt {attempt + 1}/{max_retries}: {e}")
+                logger.warning(f"Server error on attempt {attempt + 1}/{max_retries}: {e}")
                 if attempt < max_retries - 1:
-                    logging.info("Waiting 2 minutes before retrying...")
+                    logger.info("Waiting 2 minutes before retrying...")
                     time.sleep(300)
                 else:
-                    logging.error("Max retries reached. Could not get a response from the server.")
+                    logger.error("Max retries reached. Could not get a response from the server.")
                     raise  # Re-raise the last exception
 
         # This line should not be reachable if the loop is correct.
