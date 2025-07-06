@@ -1,7 +1,9 @@
 import os
 import logging
 import json
+import time
 from google import genai
+import google.genai.errors as genai_errors
 from typing import TypeVar, Type
 from pydantic import BaseModel
 
@@ -21,34 +23,69 @@ class LLMInterface:
             raise
 
         self.model = model
+        self.last_request_time = 0  # Add timestamp for rate limiting
         logging.info("LLMInterface initialized successfully.")
 
     def generate_json(self, prompt: str, response_model: Type[T]) -> T:
-        """Generates code based on a prompt and execution context.
+        """
+        Generates a JSON object from a prompt, with rate limiting and retry logic.
 
         Args:
             prompt: The user's prompt describing the desired functionality.
-            command: The command that will be used to execute the code.
+            response_model: The Pydantic model for the expected JSON response.
 
         Returns:
-            A TaskOutput object containing the generated files.
+            A Pydantic model instance of the response.
         """
-        logging.info(f"Sending prompt: '{prompt}'")
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": response_model,
-            },
-        )
-        logging.debug(f"Received response {response.text}")
-        logging.info("Received response from LLM.")
-        try:
-            output_dict = json.loads(response.text)
-            logging.info("Successfully parsed LLM response.")
-            return response_model(**output_dict)
-        except (json.JSONDecodeError, TypeError) as e:
-            logging.error(f"Failed to parse LLM response as JSON: {e}")
-            logging.error(f"Raw LLM response: {response.text}")
-            raise ValueError("LLM did not return a valid JSON object.") from e
+        # Simple rate limiting: ensure at least 10 seconds between requests
+        current_time = time.time()
+        if self.last_request_time > 0:
+            time_since_last_request = current_time - self.last_request_time
+            if time_since_last_request < 10:
+                sleep_duration = 10 - time_since_last_request
+                logging.info(f"Rate limiting. Waiting for {sleep_duration:.2f} seconds.")
+                time.sleep(sleep_duration)
+
+        # Update the last request time before making the new request
+        self.last_request_time = time.time()
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                logging.info(f"Sending prompt (attempt {attempt + 1}/{max_retries}).")
+                logging.debug(f"Prompt: '{prompt}'")
+
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": response_model,
+                    },
+                )
+
+                logging.debug(f"Received raw response: {response.text}")
+                logging.info("Received response from LLM.")
+
+                try:
+                    output_dict = json.loads(response.text)
+                    logging.info("Successfully parsed LLM response.")
+                    return response_model(**output_dict)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logging.error(f"Failed to parse LLM response as JSON: {e}")
+                    logging.error(f"Raw LLM response: {response.text}")
+                    # This is not a server error, so we don't retry.
+                    raise ValueError("LLM did not return a valid JSON object.") from e
+
+            except genai_errors.ServerError as e:
+                logging.warning(f"Server error on attempt {attempt + 1}/{max_retries}: {e}")
+                if attempt < max_retries - 1:
+                    logging.info("Waiting 2 minutes before retrying...")
+                    time.sleep(300)
+                else:
+                    logging.error("Max retries reached. Could not get a response from the server.")
+                    raise  # Re-raise the last exception
+
+        # This line should not be reachable if the loop is correct.
+        # It's a fallback in case the loop finishes without returning or raising.
+        raise RuntimeError("Failed to get a response from the LLM after all retries.")

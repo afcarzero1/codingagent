@@ -2,9 +2,8 @@ import logging
 from dotenv import load_dotenv
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Optional
 
-# Import agents and other components
 from code_generator.sandbox import DockerSandbox, ExecutionResult
 from code_generator.llm_interface import LLMInterface
 from code_generator.agents.coding_agent import (
@@ -77,17 +76,19 @@ def _handle_code_generation_action(
     initial_code: CodeAgentOutput,
     run_dir: Path,
     orchestrator_step: int,
-) -> Tuple[bool, CodeAgentOutput]:
+    previous_execution_feedback: Optional[str] = None,
+) -> Tuple[bool, CodeAgentOutput, Optional[str]]:
     """
     Handles the execution of the CodeAgent, including the retry loop.
 
     Returns a tuple containing:
     - A boolean indicating if the final execution was successful.
     - The last generated code output.
+    - The execution feedback if the last attempt failed.
     """
     logging.info("Delegating to CodeAgent...")
     latest_code = initial_code
-    execution_feedback = None
+    execution_feedback = previous_execution_feedback
 
     for attempt in range(1, MAX_CODE_AGENT_ATTEMPTS + 1):
         logging.info(f"--- Code Agent Attempt {attempt}/{MAX_CODE_AGENT_ATTEMPTS} ---")
@@ -117,14 +118,14 @@ def _handle_code_generation_action(
 
         if execution_result.was_successful:
             logging.info("✅ Code execution was successful.")
-            return True, latest_code
+            return True, latest_code, None
         else:
             logging.warning(f"❌ Code execution failed on attempt {attempt}.")
             execution_feedback = f"STDOUT:\n{execution_result.stdout}\n\nSTDERR:\n{execution_result.stderr}"
             logging.debug(f"Execution feedback:\n{execution_feedback}")
 
     logging.error("Code agent failed to produce working code after all attempts.")
-    return False, latest_code
+    return False, latest_code, execution_feedback
 
 
 def main() -> None:
@@ -132,9 +133,12 @@ def main() -> None:
     load_dotenv()
     logging.basicConfig(
         level=logging.DEBUG,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        format="%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    logging.getLogger("google").setLevel(logging.INFO)
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.INFO)
 
     # --- Setup ---
     run_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -147,7 +151,7 @@ def main() -> None:
         llm = LLMInterface()
         available_tools = {
             "code_agent": "Writes and refines code based on a prompt and execution feedback. Use this to write, test, and fix code.",
-            "human_agent": "Asks the human user for clarification or input. Use this if the objective is unclear or you need guidance.",
+            "human_agent": "Asks the human user for clarification or input. Use this if the objective is unclear or you need guidance. Do not be shy!",
             "finish": "Ends the process when the task is completed successfully or if you are stuck and cannot proceed.",
         }
         orchestrator = OrchestratorAgent(llm, available_tools=available_tools)
@@ -156,46 +160,53 @@ def main() -> None:
 
         # --- Initial State ---
         objective = """
-        You are tasked with creating a Python chess engine. Your goal is to produce well-structured, class-based code (using type hints and docstrings!) that can determine the best move in a given chess position.
+        You are tasked with creating a comprehensive Streamlit dashboard to analyze and compare the financial implications of renting versus buying a house in Sweden. You are the expert; make all technical and financial modeling decisions to create a robust and insightful tool.
 
-        **Expected Output & File Structure:**
+        **Core Objective:**
+        The primary goal is to determine the "break-even point" – the number of years after which buying a home becomes more financially advantageous than renting. The application must be interactive, user-friendly, and provide clear, actionable conclusions.
 
-        Your final solution can consist of something like the following files, please use this only as an initial point of thinking and structure the code
-        as much as you can so that it is PROFESSIONAL.:
-        1.  `requirements.txt`: This file must specify all necessary libraries. The `python-chess` library will be essential for this task.
-        2.  `chess_engine.py`: This file should contain the primary logic, organized into classes. For instance, you might create an `Engine` class.
-        3.  `test_chess_engine.py`: This file must contain a comprehensive suite of pytest tests for your engine.
-        
-        The expected output must have some kind of interface so that the user can test it and write moves done in a chessboard
-        during a game and obtain a score for that position, input next moves, have a ranking of the best moves that can be done
-        explore some of the variants. The idea is that the user wants to be able to understand why a move was good or bad (basically you can show the lines).
-        My main frustration is when playing a game and the engine suggests the best move , then it is followed byh an opponent move but
-        I do not understand why they can/cannot plain certain moves after it. For instance, the engine suggests for the opponen to play something
-        but then I do not understand what happens if I play a certain move because the outcome if many moves in the future. I want to be able to interactively go 
-        forward and backwards and overwrite the moves.
-        
-        You can add more files if you think it will improve the structure of the code, or change this structure as you think is better, 
-        this is just a suggestion on how it could go well.
+        **Financial Model & Currency:**
+        - All financial calculations and user inputs must be in **Swedish Crowns (SEK)**.
+        - You must research and use realistic default values for the Swedish market (particularly the Stockholm area) for all financial parameters. However, the user must be able to override every single default value.
+        - The model must account for all significant costs associated with both buying and renting.
 
+        **Dashboard & Interactivity - User Inputs:**
+        The Streamlit dashboard must have a clear sidebar for user inputs, including:
+        1.  **Buy Scenario:**
+            -   Total Property Price (SEK)
+            -   Down Payment (Kontantinsats) (%)
+            -   Mortgage Interest Rate (Bolåneränta) (%)
+            -   Loan Term (Lånetid) (years)
+            -   Monthly Housing Association Fee (Månadsavgift till föreningen) (SEK)
+            -   Annual Property Maintenance Costs (% of property price)
+            -   Expected Annual Property Value Appreciation (%)
+        2.  **Rent Scenario:**
+            -   Monthly Rent (Månadshyra) (SEK)
+            -   Expected Annual Rent Increase (%)
+        3.  **General Assumptions:**
+            -   Analysis Timeframe (years)
+            -   Expected Annual Return on Investment (for the down payment and other saved/invested capital) (%)
+            -   Inflation Rate (%)
 
-        **Testing Requirements (`test_chess_engine.py`):**
+        **Dashboard & Visualizations - Outputs:**
+        The main area of the dashboard must clearly present the results:
+        1.  **The Verdict:** A clear, top-level summary stating which option is financially better over the specified timeframe and, most importantly, the calculated **break-even point in years**.
+        2.  **Cumulative Cost Chart:** A line chart visualizing the total cumulative costs of buying vs. renting over the analysis timeframe. The point where the lines cross must be clearly marked as the break-even point.
+        3.  **Detailed Cost Breakdowns:** Use tables or charts to show the detailed breakdown of costs for both scenarios, including total interest paid, total principal paid, total rent, maintenance costs, and the opportunity cost of the down payment.
+        4.  **Assumptions Panel:** Clearly list all the key financial assumptions being used for the calculation (whether default or user-provided).
 
-        Your tests must be robust and cover several key scenarios:
-        -   **Checkmate-in-One:** Create a test case where the engine is presented with a position where it can deliver checkmate in a single move. The test must verify that the engine makes the correct winning move.
-        -   **Capture of a Hanging Piece:** Set up a board where an opponent's piece is undefended. The test should confirm that the engine correctly identifies and executes the capture.
-        -   **Move Legality:** Ensure that your engine does not produce illegal moves. You can test this by providing a position with very few legal moves and asserting that the engine's choice is one of them.
-        
-        Add any other test that is required to have comprehensive testing of the FULL application. We want to make sure that the user is able to have the best possible
-        experience. Everything should be complete. Please make sure to add all the functions you think the user might expect from this app, do not leave something incomplete
-        or working to the minimum possible. It must be comprehensive and production grade software 
-        
-        If you have any questions or want me to make some important choice please do not doubt in contacting me for making decisions, but try to be
-        autonomous. YOU GOT THIS. THINK THINK AND NEVER STOP THINKING!!! Every decision must reflect your expertise as an incredible python developer
-        with a lot of curiosity and desire to get things right.
-        
+        **Code & Structure:**
+        - The primary application file should be `app.py`.
+        - Organize the code logically. The financial calculations should be separated into their own functions or a separate module for clarity and reusability.
+        - The code must be well-commented, include type hints, and be easy to understand.
+        - Ensure all necessary libraries are listed in `requirements.txt`.
+
+        **Your Autonomy:**
+        You are the expert. Research the necessary financial formulas (e.g., loan amortization, future value calculations). Make informed decisions to build a tool that is not just functional but genuinely insightful for a user in Sweden.
         """
         history: List[str] = []
         latest_code: CodeAgentOutput = None
+        execution_feedback: Optional[str] = None
 
         DockerSandbox.setup_image()
 
@@ -221,18 +232,26 @@ def main() -> None:
 
             if agent_name == "code_agent":
                 prompt = agent_args["prompt"]
+                if len(agent_args["command"]) > 0:
+                    command = EXECUTION_COMMAND + " && " + agent_args["command"]
+                else:
+                    command = EXECUTION_COMMAND
 
-                was_successful, latest_code = _handle_code_generation_action(
-                    prompt=prompt,
-                    command=EXECUTION_COMMAND,  # Always use the fixed command
-                    code_agent=code_agent,
-                    initial_code=latest_code,
-                    run_dir=current_run_dir,
-                    orchestrator_step=i,
+                was_successful, latest_code, execution_feedback = (
+                    _handle_code_generation_action(
+                        prompt=prompt,
+                        command=command,
+                        code_agent=code_agent,
+                        initial_code=latest_code,
+                        run_dir=current_run_dir,
+                        orchestrator_step=i,
+                        previous_execution_feedback=execution_feedback,
+                    )
                 )
 
                 files_detail = latest_code.model_dump_json(include={"files"}, indent=2)
                 if was_successful:
+                    execution_feedback = None  # Reset feedback on success
                     history_message = (
                         f"Action: code_agent. Result: Code executed successfully.\n"
                         f"Agent's Reasoning: {latest_code.reasoning}\n"
@@ -242,7 +261,8 @@ def main() -> None:
                     history_message = (
                         f"Action: code_agent. Result: Execution failed after {MAX_CODE_AGENT_ATTEMPTS} attempts.\n"
                         f"Agent's Final Reasoning: {latest_code.reasoning}\n"
-                        f"Final Generated Files:\n{files_detail}"
+                        f"Final Generated Files:\n{files_detail}\n"
+                        f"Execution Feedback:\n{execution_feedback}"
                     )
 
             elif agent_name == "human_agent":
