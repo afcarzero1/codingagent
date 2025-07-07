@@ -42,6 +42,9 @@ class CodeAgent(Agent[CodeAgentOutput]):
     and proper docstrings. You have to be mindful of having a well structured code (i.e.
     no functions with excesive number of parameters, divide into classes, use OOP when needed,
     have interfaces if needed, split into modules if needed etc)
+    
+    The testing must be complete and comprehensive. It is meant to cover all cases you can
+    think of exhaustively (without exageration)
 
     The code will be executed in a sandboxed environment, and the following command will be run from the root of the workspace to test your code:
     --- COMMAND ---
@@ -57,7 +60,13 @@ class CodeAgent(Agent[CodeAgentOutput]):
     Make sure that all your code is properly tested, the functions must have type hints
     and proper docstrings. You have to be mindful of having a well structured code (i.e.
     no functions with excesive number of parameters, divide into classes, use OOP when needed,
-    have interfaces if needed, split into modules if needed etc)
+    have interfaces if needed, split into modules if needed etc). Your code must be DRY as well.
+    
+    The testing must be complete and comprehensive. It is meant to cover all cases you can
+    think of exhaustively (without exageration). No edge case must be left without testing,
+    your code MUST work.
+    
+    
     You previously generated the following files:
     --- PREVIOUS FILES ---
     {previous_files_json}

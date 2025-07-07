@@ -1,8 +1,7 @@
-import logging
 from abc import ABC, abstractmethod
 
-from typing import List, TypeVar, Generic
-from pydantic import BaseModel, Field
+from typing import TypeVar, Generic
+from pydantic import BaseModel
 
 from code_generator.llm_interface import LLMInterface
 

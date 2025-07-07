@@ -83,7 +83,14 @@ The orchestrator chose to call the {agent_name} agent for the following reason:
 --- END REASONING ---
 
 Special Instructions for code_agent:
-If you are generating arguments for the code_agent, understand that the command you provide is an optional, additional command. The system uses the following Python logic to construct the final command that gets executed:
+You must give the agent instructions! You do not need to write explicitly code in the prompt
+unless you have a particular request. But you MUST give detailed instructions! Understand the
+coding agent wont have all the context you do so you must provide it for him. ALL it needs
+to know you must give (general aim, and his task). He will have access to current code, if there
+is one.
+
+If you are generating arguments for the code_agent, understand that the command you provide is an optional, additional command. 
+The system uses the following Python logic to construct the final command that gets executed:
 
 # This is the base command that always runs. It includes dependency installation and testing.
 EXECUTION_COMMAND = (
@@ -101,11 +108,8 @@ else:
     final_command = EXECUTION_COMMAND
 
     Your task is to generate the prompt for the coding agent and, if needed, the additional command string to be appended.
-
     The command is useful for running a specific part of the code (like a CLI) after the main tests have already run as part of EXECUTION_COMMAND.
-
     If no additional command is needed, you must still generate the prompt but provide an empty string "" for the command.
-
     DO NOT add && to the start or end of your command string.
 
 Based on the reasoning, generate the JSON arguments for the code_agent. Your output MUST be a valid JSON object.

@@ -80,12 +80,16 @@ class LLMInterface:
                     raise ValueError("LLM did not return a valid JSON object.") from e
 
             except genai_errors.ServerError as e:
-                logger.warning(f"Server error on attempt {attempt + 1}/{max_retries}: {e}")
+                logger.warning(
+                    f"Server error on attempt {attempt + 1}/{max_retries}: {e}"
+                )
                 if attempt < max_retries - 1:
                     logger.info("Waiting 2 minutes before retrying...")
                     time.sleep(300)
                 else:
-                    logger.error("Max retries reached. Could not get a response from the server.")
+                    logger.error(
+                        "Max retries reached. Could not get a response from the server."
+                    )
                     raise  # Re-raise the last exception
 
         # This line should not be reachable if the loop is correct.
